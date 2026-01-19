@@ -11,13 +11,16 @@ class ComputeStack(cdk.Stack):
         
         # Create EC2 keypair
         self.key_pair = ec2.KeyPair(
-            self, Config.KEY_PAIR_NAME
+            self, 
+            Config.KEY_PAIR_NAME
         )
         
         # Get the public subnet
         public_subnet = network_stack.vpc.public_subnets[0]
         
         # Create EC2 instance
+        with open(Config.USER_DATA_FILE, "r") as f:
+            user_data_script = f.read()
         self.instance = ec2.Instance(
             self, "KubernetesInstance",
             vpc=network_stack.vpc,
@@ -28,7 +31,8 @@ class ComputeStack(cdk.Stack):
             key_pair=self.key_pair,
             vpc_subnets=ec2.SubnetSelection(subnets=[public_subnet]),
             security_group=network_stack.security_group,
-            associate_public_ip_address=True
+            associate_public_ip_address=True,
+            user_data=ec2.UserData.custom(user_data_script)
         )
         
         # Output the instance public IP

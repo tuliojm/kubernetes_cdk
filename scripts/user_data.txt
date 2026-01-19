@@ -1,0 +1,69 @@
+#!/bin/bash                
+local_addr=$(ip route show to 0.0.0.0/0 | awk '{print $9}')
+k8s_cp="k8scp.mydomain.tst"
+
+dnf install -y containerd jq
+setenforce 0
+
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.35/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.35/rpm/repodata/repomd.xml.key
+exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+EOF
+
+sudo yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
+
+# sysctl params required by setup, params persist across reboots
+cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+net.ipv4.ip_forward = 1
+EOF
+
+# Apply sysctl params without reboot
+sudo sysctl --system
+sysctl net.ipv4.ip_forward | grep -qE '1$' && echo sysctl success || echo sysctl failure
+
+grep -qE "SystemdCgroup.*true" /etc/containerd/config.toml || cat <<EOF>>/etc/containerd/config.toml
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc]
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
+    SystemdCgroup = true
+EOF
+
+
+mkdir -p /etc/kubernetes/kubelet.conf.d
+
+cat <<EOF>/etc/kubernetes/kubelet.conf.d/75-kubelet-address.conf
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+cgroupDriver: systemd
+address: $local_addr
+port: 20250
+serializeImagePulls: false
+evictionHard:
+    memory.available:  "100Mi"
+    nodefs.available:  "10%"
+    nodefs.inodesFree: "5%"
+    imagefs.available: "15%"
+    imagefs.inodesFree: "5%"
+EOF
+
+grep -q $k8s_cp /etc/hosts || cat <<EOF>>/etc/hosts
+$local_addr $k8s_cp
+EOF
+
+systemctl enable --now containerd
+systemctl enable --now kubelet
+
+# Install kubectl
+# curl -o /usr/local/bin/kubectl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+# chmod +x /usr/local/bin/kubectl
+
+# Install minikube
+# curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+# install minikube /usr/local/bin/
+
+# Start minikube
+# su - ec2-user -c "minikube start --driver=docker"
