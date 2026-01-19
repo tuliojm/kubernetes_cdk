@@ -9,35 +9,48 @@ class ComputeStack(cdk.Stack):
     def __init__(self, scope: Construct, id: str, network_stack: NetworkStack, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
         
-        # Create EC2 keypair
-        self.key_pair = ec2.KeyPair(
-            self, 
-            Config.KEY_PAIR_NAME
-        )
+        self.instances = {}
         
-        # Get the public subnet
-        public_subnet = network_stack.vpc.public_subnets[0]
-        
-        # Create EC2 instance
-        with open(Config.USER_DATA_FILE, "r") as f:
-            user_data_script = f.read()
-        self.instance = ec2.Instance(
-            self, "KubernetesInstance",
-            vpc=network_stack.vpc,
-            instance_type=ec2.InstanceType(Config.INSTANCE_TYPE),
-            machine_image=ec2.AmazonLinuxImage(
-                generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023
-            ),
-            key_pair=self.key_pair,
-            vpc_subnets=ec2.SubnetSelection(subnets=[public_subnet]),
-            security_group=network_stack.security_group,
-            associate_public_ip_address=True,
-            user_data=ec2.UserData.custom(user_data_script)
-        )
-        
-        # Output the instance public IP
-        cdk.CfnOutput(
-            self, "InstancePublicIP",
-            value=self.instance.instance_public_ip,
-            description="Public IP of the Kubernetes instance"
-        )
+        # Create instances based on compute configurations
+        for config_name, config in Config.COMPUTE_CONFIGS.items():
+            # Create EC2 keypair for this configuration
+            key_pair = ec2.KeyPair(
+                self, 
+                f"{config['key_pair_name']}-{config_name}"
+            )
+            
+            # Get the public subnet
+            public_subnet = network_stack.vpc.public_subnets[0]
+            
+            # Create instances for this configuration
+            for i in range(config['count']):
+                instance_id = f"{config_name}-{i+1}"
+                
+                # Combine common scripts and instance-specific scripts
+                combined_script = ""
+                for script_path in Config.COMMON_SCRIPTS + config['scripts']:
+                    with open(script_path, "r") as f:
+                        combined_script += f.read() + "\n"
+                
+                instance = ec2.Instance(
+                    self, f"Instance-{instance_id}",
+                    vpc=network_stack.vpc,
+                    instance_type=ec2.InstanceType(config['instance_type']),
+                    machine_image=ec2.AmazonLinuxImage(
+                        generation=ec2.AmazonLinuxGeneration.AMAZON_LINUX_2023
+                    ),
+                    key_pair=key_pair,
+                    vpc_subnets=ec2.SubnetSelection(subnets=[public_subnet]),
+                    security_group=network_stack.security_group,
+                    associate_public_ip_address=True,
+                    user_data=ec2.UserData.custom(combined_script)
+                )
+                
+                self.instances[instance_id] = instance
+                
+                # Output the instance public IP
+                cdk.CfnOutput(
+                    self, f"Instance-{instance_id}-PublicIP",
+                    value=instance.instance_public_ip,
+                    description=f"Public IP of the {instance_id} instance"
+                )
