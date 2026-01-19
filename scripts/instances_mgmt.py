@@ -5,7 +5,7 @@ from utils import get_instances
 ec2 = boto3.client('ec2')
 
 def main(action, tag_key, tag_value):
-    instance_ids = get_instances(tag_key, tag_value, action)
+    instance_ids = get_instances(action, tag_key, tag_value)
     if len(instance_ids) == 0:
         print(f"No instances found with tag {tag_key}={tag_value} in the appropriate state for action '{action}'.")
         return
