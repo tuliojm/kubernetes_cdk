@@ -1,5 +1,5 @@
 import aws_cdk as cdk
-from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_ec2 as ec2, aws_iam as iam
 from constructs import Construct
 from config import Config
 from kubernetes_cdk.network_stack import NetworkStack
@@ -8,6 +8,15 @@ from kubernetes_cdk.network_stack import NetworkStack
 class ComputeStack(cdk.Stack):
     def __init__(self, scope: Construct, id: str, network_stack: NetworkStack, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
+        
+        # Create IAM role for SSM
+        ssm_role = iam.Role(
+            self, "SSMRole",
+            assumed_by=iam.ServicePrincipal("ec2.amazonaws.com"),
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name("AmazonSSMManagedInstanceCore")
+            ]
+        )
         
         self.instances = {}
         
@@ -43,7 +52,8 @@ class ComputeStack(cdk.Stack):
                     vpc_subnets=ec2.SubnetSelection(subnets=[public_subnet]),
                     security_group=network_stack.security_group,
                     associate_public_ip_address=True,
-                    user_data=ec2.UserData.custom(combined_script)
+                    user_data=ec2.UserData.custom(combined_script),
+                    role=ssm_role
                 )
                 
                 self.instances[instance_id] = instance
