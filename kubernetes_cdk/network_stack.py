@@ -37,3 +37,10 @@ class NetworkStack(cdk.Stack):
             connection=ec2.Port.tcp(22),
             description="Allow SSH from configured IP"
         )
+        
+        # Allow all traffic from resources with the same security group
+        self.security_group.add_ingress_rule(
+            peer=ec2.Peer.security_group_id(self.security_group.security_group_id),
+            connection=ec2.Port.all_traffic(),
+            description="Allow all traffic from same security group"
+        )
